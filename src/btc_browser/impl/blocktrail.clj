@@ -25,7 +25,7 @@
         {:address address :tx hash :time time :amount value})))
 
   (sent [_ address]
-    (let [txs (blocktrail-query-memo address)]
+    (let [txs (blocktrail-query-memo api-key address)]
       (for [{:keys [hash time inputs outputs]} txs
             :when ((set (map :address inputs)) address)
             {:keys [address value]} outputs]
