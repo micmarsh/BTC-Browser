@@ -1,32 +1,29 @@
 (ns btc-browser.impl.blocktrail
   (:require [btc-browser.protocol :refer :all]
-            [clj-http.client :as http]))
+            [cheshire.core :refer [parse-string]]
+            [org.httpkit.client :as http]))
 
-(def ^:const http-options
-  (zipmap [:accept :content-type :as]
-          (repeat :json)))
-
-(defn blocktrail-query [api-key address]
+(defn blocktrail-query [api-key address callback]
   (-> "https://api.blocktrail.com/v1/btc/address/%s/transactions?api_key=%s"
       (format address api-key)
-      (http/get http-options)
-      (:body)
-      (:data)))
+      (http/get (comp callback :data #(parse-string % true) :body))))
 
-(def blocktrail-query-memo (memoize blocktrail-query))
+(defn received-helper [address txs]
+  (for [{:keys [hash time inputs outputs]} txs
+        :when ((set (map :address outputs)) address)
+        {:keys [address value]} inputs]
+    {:address address :tx hash :time time :amount value}))
+
+(defn sent-helper [address txs]
+  (for [{:keys [hash time inputs outputs]} txs
+        :when ((set (map :address inputs)) address)
+        {:keys [address value]} outputs]
+    {:address address :tx hash :time time :amount value}))
+
 
 (defrecord blocktrail [api-key]
   AddressGraph
   (received [_ address]
-    (let [txs (blocktrail-query-memo api-key address)]
-      (for [{:keys [hash time inputs outputs]} txs
-            :when ((set (map :address outputs)) address)
-            {:keys [address value]} inputs]
-        {:address address :tx hash :time time :amount value})))
-
+    (blocktrail-query api-key address (partial received-helper address)))
   (sent [_ address]
-    (let [txs (blocktrail-query-memo api-key address)]
-      (for [{:keys [hash time inputs outputs]} txs
-            :when ((set (map :address inputs)) address)
-            {:keys [address value]} outputs]
-        {:address address :tx hash :time time :amount value}))))
+    (blocktrail-query api-key address (partial sent-helper address))))

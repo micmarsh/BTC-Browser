@@ -5,4 +5,5 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.7.0"]
                  [mutils "0.1.0-SNAPSHOT"]
-                 [clj-http "1.1.2"]])
+                 [cheshire "5.5.0"]
+                 [http-kit "2.1.19"]])

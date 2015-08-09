@@ -1,31 +1,27 @@
 (ns btc-browser.impl.blockchain-info
   (:require [btc-browser.protocol :refer :all]
-            [clj-http.client :as http]))
+            [cheshire.core :refer [parse-string]]
+            [org.httpkit.client :as http]))
 
-(def ^:const http-options
-  (zipmap [:accept :content-type :as]
-          (repeat :json)))
-
-(defn blockchain-query [address]
+(defn blockchain-query [address callback]
   (-> (str "https://blockchain.info/rawaddr/" address)
-      (http/get http-options)
-      (:body)
-      (:txs)))
+      (http/get (comp callback :txs #(parse-string % true) :body))))
 
-(def blockchain-query-memo (memoize blockchain-query))
+(defn received-helper [address txs]
+  (for [{:keys [hash time inputs out]} txs
+        :when ((set (map :addr out)) address)
+        {{:keys [addr value]} :prev_out} inputs]
+    {:address addr :tx hash :time time :amount value}))
+
+(defn sent-helper [address txs]
+  (for [{:keys [hash time inputs out]} txs
+        :when ((set (map (comp :addr :prev_out) inputs)) address)
+        {:keys [addr value]} out]
+    {:address addr :tx hash :time time :amount value}))
 
 (def blockchain-info
   (reify AddressGraph
     (received [_ address]
-      (let [txs (blockchain-query-memo address)]
-        (for [{:keys [hash time inputs out]} txs
-              :when ((set (map :addr out)) address)
-              {{:keys [addr value]} :prev_out} inputs]
-          {:address addr :tx hash :time time :amount value})))
-
+      (blockchain-query address (partial received-helper address)))
     (sent [_ address]
-      (let [txs (blockchain-query-memo address)]
-        (for [{:keys [hash time inputs out]} txs
-              :when ((set (map (comp :addr :prev_out) inputs)) address)
-              {:keys [addr value]} out]
-          {:address addr :tx hash :time time :amount value})))))
+      (blockchain-query address (partial sent-helper address)))))
