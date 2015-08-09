@@ -1,19 +1,26 @@
 (ns btc-browser.core
-  (:refer-clojure :exclude [tree-seq])
-  (:require [mutils.seq.tree :refer [tree-seq]]))
+  (:refer-clojure :exclude [mapcat])
+  (:require [mutils.seq.lazy :refer [mapcat]]
+            [btc-browser.protocol :refer :all]))
 
-(def ^:const bf-path
-  {:breadth true :path true})
+(defn ingest
+  "step: (partial btc-browser.protocol/whatever impl-thing)"
+  ([step storage addrs]
+     (ingest 100 step storage addrs))
+  ([limit step storage addrs]
+     (when (pos? limit)
+       (let [results (map (juxt identity step) addrs)]
+         (doseq [[addr connections] results]
+           (time (save! storage addr connections)))
+         (recur (dec limit) step storage (distinct (mapcat (comp (partial map :address) second) results)))))))
 
-(defn path?
-  ([step addr-from addr-to]
-     (path? 1000 step addr-from addr-to))
-  ([limit step addr-from addr-to]
-     (let [cutoff (atom 0)
-           branch? (fn [_] (< (swap! cutoff inc) limit))
-           children (comp step :address)]
-       (->>  {:address addr-from}
-             (tree-seq bf-path branch? children)
-             (drop-while (comp (partial not= addr-to) :address :node))
-             (first)
-             (:path)))))
+(defn async-ingest
+  "Will expect step to return a promise"
+  ([step storage addrs]
+     (async-ingest 100 step storage addrs))
+  ([limit step storage addrs]
+     (when (pos? limit)
+       (let [results (doall (map (juxt identity step) addrs))]
+         (doseq [[addr connections] results]
+           (time (save! storage addr @connections)))
+         (recur (dec limit) step storage (distinct (mapcat (comp (partial map :address) deref second) results)))))))

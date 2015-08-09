@@ -25,3 +25,10 @@
       (blockchain-query address (partial received-helper address)))
     (sent [_ address]
       (blockchain-query address (partial sent-helper address)))))
+
+(def blockchain-info'
+  (reify AddressGraph
+    (received [_ address]
+      @(blockchain-query address (partial received-helper address)))
+    (sent [_ address]
+      @(blockchain-query address (partial sent-helper address)))))

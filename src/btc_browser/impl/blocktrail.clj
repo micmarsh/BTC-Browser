@@ -20,10 +20,16 @@
         {:keys [address value]} outputs]
     {:address address :tx hash :time time :amount value}))
 
-
 (defrecord blocktrail [api-key]
   AddressGraph
   (received [_ address]
     (blocktrail-query api-key address (partial received-helper address)))
   (sent [_ address]
     (blocktrail-query api-key address (partial sent-helper address))))
+
+(defrecord blocktrail' [api-key]
+  AddressGraph
+  (received [_ address]
+    @(blocktrail-query api-key address (partial received-helper address)))
+  (sent [_ address]
+    @(blocktrail-query api-key address (partial sent-helper address))))

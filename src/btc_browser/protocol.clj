@@ -15,3 +15,8 @@
        :time <a timestamp, type doesn't matter for now>
        :amount <satoshis, amount transferred\"} ...]
      representing all transaction sent from the given address"))
+
+(defprotocol Storage
+  "An interface to represent basic persistence and querying operations"
+  (save! [this address connections])
+  (query [this address]))
