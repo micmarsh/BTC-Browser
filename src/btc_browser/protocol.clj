@@ -16,7 +16,13 @@
        :amount <satoshis, amount transferred\"} ...]
      representing all transaction sent from the given address"))
 
-(defprotocol Storage
+(defprotocol AddressGraphAsync
+
+  (received-async [this address publish-to])
+
+  (sent-async [this address publish-to]))
+
+(defprotocol ConnectionStorage
   "An interface to represent basic persistence and querying operations"
   (save! [this address connections])
   (query [this address]))

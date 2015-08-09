@@ -1,6 +1,10 @@
 (ns btc-browser.impl.blockchain-info
+  (:refer-clojure :exclude [vector])
   (:require [btc-browser.protocol :refer :all]
+            [clojure.core.async :refer [put!]]
+            [clj-tuple :refer [vector]]
             [cheshire.core :refer [parse-string]]
+            [mutils.fn.compose :refer [comp']]
             [org.httpkit.client :as http]))
 
 (defn blockchain-query [address callback]
@@ -19,16 +23,19 @@
         {:keys [addr value]} out]
     {:address addr :tx hash :time time :amount value}))
 
+(defn- async-helper [address channel helper]
+  (let [callback (comp' (put! channel) (vector address) (helper address))]
+      (blockchain-query address callback)))
+
 (def blockchain-info
-  (reify AddressGraph
+  (reify
+    AddressGraph
     (received [_ address]
       (blockchain-query address (partial received-helper address)))
     (sent [_ address]
-      (blockchain-query address (partial sent-helper address)))))
-
-(def blockchain-info'
-  (reify AddressGraph
-    (received [_ address]
-      @(blockchain-query address (partial received-helper address)))
-    (sent [_ address]
-      @(blockchain-query address (partial sent-helper address)))))
+      (blockchain-query address (partial sent-helper address)))
+    AddressGraphAsync
+    (received-async [_ address channel]
+      (async-helper address channel received-helper))
+    (sent-async [_ address channel]
+      (async-helper address channel sent-helper))))
