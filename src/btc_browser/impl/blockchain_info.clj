@@ -5,7 +5,8 @@
             [clj-tuple :refer [vector]]
             [cheshire.core :refer [parse-string]]
             [mutils.fn.compose :refer [comp']]
-            [org.httpkit.client :as http]))
+            [org.httpkit.client :as http]
+            [btc-browser.error :refer [wrap-error]]))
 
 (defn blockchain-query [address callback]
   (-> (str "https://blockchain.info/rawaddr/" address)
@@ -15,17 +16,22 @@
   (for [{:keys [hash time inputs out]} txs
         :when ((set (map :addr out)) address)
         {{:keys [addr value]} :prev_out} inputs]
-    {:address addr :tx hash :time time :amount value}))
+    {:address addr :tx hash
+     :time time :amount value
+     :direction :incoming}))
 
 (defn sent-helper [address txs]
   (for [{:keys [hash time inputs out]} txs
         :when ((set (map (comp :addr :prev_out) inputs)) address)
         {:keys [addr value]} out]
-    {:address addr :tx hash :time time :amount value}))
+    {:address addr :tx hash
+     :time time :amount value
+     :direction :outgoing}))
 
 (defn- async-helper [address channel helper]
-  (let [callback (comp' (put! channel) (vector address) (helper address))]
-      (blockchain-query address callback)))
+  (let [handle-error (wrap-error (comp' (vector address) (helper address)))
+        callback (comp' (put! channel) handle-error)]
+    (blockchain-query address callback)))
 
 (def blockchain-info
   (reify

@@ -5,7 +5,8 @@
             [clojure.core.async :refer [put!]]
             [clj-tuple :refer [vector]]
             [mutils.fn.compose :refer [comp']]
-            [org.httpkit.client :as http]))
+            [org.httpkit.client :as http]
+            [btc-browser.error :refer [wrap-error]]))
 
 (defn blocktrail-query [api-key address callback]
   (-> "https://api.blocktrail.com/v1/btc/address/%s/transactions?api_key=%s"
@@ -16,16 +17,21 @@
   (for [{:keys [hash time inputs outputs]} txs
         :when ((set (map :address outputs)) address)
         {:keys [address value]} inputs]
-    {:address address :tx hash :time time :amount value}))
+    {:address address :tx hash
+     :time time :amount value
+     :direction :incoming}))
 
 (defn sent-helper [address txs]
   (for [{:keys [hash time inputs outputs]} txs
         :when ((set (map :address inputs)) address)
         {:keys [address value]} outputs]
-    {:address address :tx hash :time time :amount value}))
+    {:address address :tx hash
+     :time time :amount value
+     :direction :outgoing}))
 
 (defn- async-helper [api-key address channel helper]
-  (let [callback (comp' (put! channel) (vector address) (helper address))]
+  (let [handle-error (wrap-error (comp' (vector address) (helper address)))
+        callback (comp' (put! channel) handle-error)]
       (blocktrail-query api-key address callback)))
 
 (defrecord blocktrail [api-key]
