@@ -1,62 +1,11 @@
 (ns btc-browser.core
   (:refer-clojure :exclude [vector])
-  (:require [clj-tuple :refer [vector]]
-            [btc-browser.protocol :refer :all]
-            [clojure.core.async :as a]))
+  (:require [btc-browser.ingest
+             [lookup :refer [start-connections-lookup]]
+             [storage :refer [start-connections-save]]]))
 
-(def ^:dynamic *buffer-size* 100)
-
-(defn split-pipe
-  "pipe all items from `from` to `to`, using a mult to avoid
-   destructively reading from `from`"
-  [from to]
-  (-> from
-      (a/mult)
-      (a/tap to)))
-
-(defn start-connections-lookup [api address]
-  (let [publish-results (a/chan *buffer-size*)
-        lookup-more (a/chan *buffer-size*)]
-    (split-pipe publish-results lookup-more)
-    ;; (sent-async api address publish-results)
-    ;; (received-async api address publish-results)
-    {:input lookup-more :output publish-results
-     :futures
-     (-> (loop [[_ connections] (a/<!! lookup-more)]
-           (when-not (nil? connections)
-             (doseq [:let [more-addresses (map :address connections)]
-                     address more-addresses]
-;;              (sent-async api address publish-results)
-               (received-async api address publish-results))
-             ;; TODO
-             ;; going to need some smooth cycle detection if you're
-             ;; going to branch in both directions. That should
-             ;; probably exist on the api implementation level, could
-             ;; be fancy and roll it into some kind of caching
-             (recur (a/<!! lookup-more))))
-         (future)
-         (vector))}))
-
-(defmacro ^:private for' [& body]
-  `(doall (for ~@body)))
-
-(defn start-connections-save [storage threads raw-incoming]
-  (let [to-save (a/chan *buffer-size*)
-        output (a/chan *buffer-size*)]
-    (split-pipe raw-incoming to-save)
-    {:input raw-incoming :output output
-     :futures
-     (for' [_ (range threads)]
-       (future
-         (loop [[address connections :as result] (a/<!! to-save)]
-           (when-not (nil? result)
-             (printf "yay saving %d connection for %s" (count connections) address)
-             (save! storage address connections)
-             (a/put! output {:status :success :data result})
-             (recur (a/<!! to-save))))))}))
-
-(defn start-ingest [api storage {:keys [save-threads]}]
-  (let [{incoming :output :as lookup} (start-connections-lookup api "")
+(defn start-ingest [lookup-fn storage {:keys [save-threads]}]
+  (let [{incoming :output :as lookup} (start-connections-lookup lookup-fn "")
         saving (start-connections-save storage save-threads incoming)]
     {:lookup lookup
      :saving saving}))
