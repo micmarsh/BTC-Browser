@@ -3,17 +3,23 @@
             [btc-browser.async.util :as u]))
 
 (defn start-connections-lookup [lookup-fn address]
-  (let [publish-results (a/chan u/*buffer-size*)
-        lookup-more (a/chan u/*buffer-size*)]
-    (u/split-pipe publish-results lookup-more)
-    (lookup-fn address publish-results)
+  (let [base-chan (a/chan u/*buffer-size*)
+        base-mult (a/mult base-chan)
+        lookup-more (a/chan u/*buffer-size*)
+        publish-results (a/chan u/*buffer-size*)]
+    (a/tap base-mult lookup-more)
+    (a/tap base-mult publish-results)
+
+    (lookup-fn address base-chan)
     {:input lookup-more :output publish-results
+     :shutdown #(a/close! base-chan)
      :futures
-     (-> (loop [[_ connections] (a/<!! lookup-more)]
-           (when-not (nil? connections)
-             (doseq [:let [more-addresses (map :address connections)]
-                     address more-addresses]
-               (lookup-fn address publish-results))
-             (recur (a/<!! lookup-more))))
+     (-> (loop [[_ connections :as result] (a/<!! lookup-more)]
+           (if (nil? result)
+             (a/close! publish-results)
+             (do
+               (doseq [address (map :address connections)]
+                 (lookup-fn address base-chan))
+               (recur (a/<!! lookup-more)))))
          (future)
          (vector))}))
